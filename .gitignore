@@ -1,0 +1,6 @@
+.DS_Store
+TNG_Tools.egg-info/
+__pycache__/
+tng_tools/.DS_Store
+tests/__pycache__
+tng_tools/__pycache__

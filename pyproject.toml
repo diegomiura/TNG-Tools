@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "TNG-Tools"
+version = "0.1.0"
+description = "CLI tools to fetch and split HSC FITS images from IllustrisTNG simulations."
+authors = [{ name="Diego Miura", email="miuradiego05@gmail.com" }]
+readme = "README.md"
+requires-python = ">=3.7"
+dependencies = ["requests", "astropy", "python-dotenv"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+tng-gen-urls = "tng_tools.fetch:main"
+tng-split = "tng_tools.split:main"

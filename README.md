@@ -1,0 +1,49 @@
+# TNG Tools
+
+CLI tools to fetch and split HSC FITS images from the IllustrisTNG simulations.
+
+## Installation
+
+```bash
+pip install .
+```
+
+## Usage
+
+### Fetch HSC FITS URLs
+
+```bash
+tng-gen-urls --api-key YOUR_API_KEY --output urls.txt
+```
+
+This command fetches all FITS image URLs from the TNG50-1 API filtered by snapshot and writes them to `urls.txt`.
+
+### Download and split HSC FITS images
+
+```bash
+tng-split split --url-list urls.txt --batch-size 50 --split-output-dir split_images --api-key YOUR_API_KEY
+```
+
+This command downloads the FITS files listed in `urls.txt` (up to 50 in this batch), splits them by filter, and saves the split images.
+
+Additional options:
+
+- `--split-output-dir`: Directory to save split images (default: `split_images`).
+- `--batch-start`: Starting index for the batch (default: 0).
+- `--remove-parent`: Remove original downloaded FITS files after splitting.
+- `--catalog-path`: Path to save a Hyrax-compatible FITS catalog.
+- `--parent-only`: Only download parent FITS files without splitting or catalog creation.
+
+## Environment Variables
+
+You can also set your API key in a `.env` file in the root directory:
+
+```
+TNG50_API_KEY=your_api_key_here
+```
+
+Make sure to add `.env` to your `.gitignore` to avoid committing secrets.
+
+## License
+
+MIT License
