@@ -17,3 +17,4 @@ dev = ["pytest"]
 [project.scripts]
 tng-gen-urls = "tng_tools.fetch:main"
 tng-split = "tng_tools.split:main"
+tng-tools = "tng_tools.split:main"

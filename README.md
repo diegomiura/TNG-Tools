@@ -10,28 +10,34 @@ pip install .
 
 ## Usage
 
+Recommended unified CLI:
+
 ### Fetch HSC FITS URLs
 
 ```bash
-tng-gen-urls --api-key YOUR_API_KEY --output urls.txt
+tng-tools gen-urls --api-key YOUR_API_KEY --output urls.txt
 ```
 
 This command fetches all FITS image URLs from the TNG50-1 API filtered by snapshot and writes them to `urls.txt`.
 An API key is required (pass `--api-key` or set `TNG50_API_KEY`).
 
-You can also use the `gen-urls` subcommand via `tng-split`:
-
-```bash
-tng-split gen-urls --api-key YOUR_API_KEY --output urls.txt
-```
-
 ### Download and split HSC FITS images
 
 ```bash
-tng-split split --url-list urls.txt --batch-size 50 --split-output-dir split_images --api-key YOUR_API_KEY
+tng-tools split --url-list urls.txt --batch-size 50 --split-output-dir split_images --api-key YOUR_API_KEY
 ```
 
 This command downloads the FITS files listed in `urls.txt` (up to 50 in this batch), splits them by filter, and saves the split images.
+
+Legacy commands (still supported):
+
+```bash
+tng-gen-urls --api-key YOUR_API_KEY --output urls.txt
+tng-split gen-urls --api-key YOUR_API_KEY --output urls.txt
+tng-split split --url-list urls.txt --batch-size 50 --split-output-dir split_images --api-key YOUR_API_KEY
+```
+
+Note: the legacy commands are still supported, but `tng-tools` is the preferred entry point going forward.
 
 Additional options:
 
