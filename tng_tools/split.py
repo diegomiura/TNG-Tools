@@ -36,9 +36,9 @@ def download_and_split_hsc_images(
 
     Notes:
         - Split FITS images will be named as: SNAPSHOT_SUBHALO_FILTER_VERSION_hsc_realistic.fits
-          (e.g., 72_0_G_v2_hsc_realistic.fits)
+          (e.g., 72_0_G_v2_hsc_realistic.fits). If no version is parsed, 'v?' is used.
         - Catalog format is compatible with Hyrax's FitsImageDataSet expectations.
-        - The 'object_id' in the catalog is an integer composed of the snapshot (2 digits) followed by the subhalo (6-digit zero-padded).
+        - The 'object_id' in the catalog is computed as (int(snapshot) * 1_000_000) + int(subhalo).
 
     Example:
         # Save split images and keep the original FITS files

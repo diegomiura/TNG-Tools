@@ -6,13 +6,13 @@ load_dotenv()
 def make_list_of_urls(API_KEY=None,
                       BASE_API_URL='https://www.tng-project.org/',
                       ENDING='/api/TNG50-1/files/skirt_images_hsc/',
-                      SNAPSHOT_FILTER='_realistic_v2_72'):
+                      SNAPSHOT_FILTER='_realistic_v2_91'):
     '''
     Fetches all FITS image URLs from the TNG50-1 API, filters by snapshot tag,
     and writes them to a text file.
 
     Args:
-        API_KEY (str): API key for authenticating with the TNG50-1 API.
+        API_KEY (str): API key for authenticating with the TNG50-1 API (required).
         BASE_API_URL (str, optional): Base URL of the TNG API.
         ENDING (str, optional): API endpoint path for HSC FITS files.
         SNAPSHOT_FILTER (str, optional): Substring to filter snapshot URLs.

@@ -17,6 +17,13 @@ tng-gen-urls --api-key YOUR_API_KEY --output urls.txt
 ```
 
 This command fetches all FITS image URLs from the TNG50-1 API filtered by snapshot and writes them to `urls.txt`.
+An API key is required (pass `--api-key` or set `TNG50_API_KEY`).
+
+You can also use the `gen-urls` subcommand via `tng-split`:
+
+```bash
+tng-split gen-urls --api-key YOUR_API_KEY --output urls.txt
+```
 
 ### Download and split HSC FITS images
 
@@ -33,6 +40,12 @@ Additional options:
 - `--remove-parent`: Remove original downloaded FITS files after splitting.
 - `--catalog-path`: Path to save a Hyrax-compatible FITS catalog.
 - `--parent-only`: Only download parent FITS files without splitting or catalog creation.
+
+Notes:
+
+- Split files are named like `SNAPSHOT_SUBHALO_FILTER_VERSION_hsc_realistic.fits`
+  (for example, `72_0_G_v2_hsc_realistic.fits`). If no version is parsed, `v?` is used.
+- Catalog `object_id` is computed as `int(snapshot) * 1000000 + int(subhalo)`.
 
 ## Environment Variables
 
