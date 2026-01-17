@@ -3,7 +3,7 @@ import time
 import requests
 import re
 from astropy.io import fits
-from astropy.table import Table
+from astropy.table import Table, vstack
 import argparse
 
 def download_and_split_hsc_images(
@@ -15,7 +15,11 @@ def download_and_split_hsc_images(
     remove_parent: bool = False,
     catalog_path=None,
     parent_file_only: bool = False,
-    parent_output_dir: str = None
+    parent_output_dir: str = None,
+    failed_urls_path: str = None,
+    max_retries: int = 3,
+    retry_backoff_sec: float = 2.0,
+    catalog_append: bool = False
 ):
     '''
     Downloads and splits HSC survey FITS images from the TNG50-1 API into individual filters,
@@ -33,6 +37,11 @@ def download_and_split_hsc_images(
         parent_file_only (bool, optional): If True, only download the parent FITS files and skip splitting and catalog creation. Defaults to False.
         parent_output_dir (str, optional): Directory to save downloaded parent FITS files.
             If None, uses split_output_dir. Defaults to None.
+        failed_urls_path (str, optional): If provided, write failed URLs (with error) here.
+        max_retries (int, optional): Number of download attempts per URL. Defaults to 3.
+        retry_backoff_sec (float, optional): Base seconds to wait between retries. Defaults to 2.0.
+        catalog_append (bool, optional): If True and catalog exists, append new entries without
+            duplicating filenames. Defaults to False.
 
     Notes:
         - Split FITS images will be named as: SNAPSHOT_SUBHALO_FILTER_VERSION_hsc_realistic.fits
@@ -84,6 +93,7 @@ def download_and_split_hsc_images(
     batch = urls[BATCH_START : BATCH_START + BATCH_SIZE]
 
     catalog_entries = [] if catalog_path else None
+    failed_urls = [] if failed_urls_path else None
 
     # helper to pull snapshot, subhalo, version from URL
     def parse_url(u):
@@ -95,6 +105,23 @@ def download_and_split_hsc_images(
         version = v_match.group(1) if v_match else 'v?'
         return snapshot, subhalo, version
 
+    def record_failure(url, err):
+        if failed_urls is not None:
+            failed_urls.append(f'{url}\t{err}')
+
+    def download_with_retries(url):
+        last_err = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                r = requests.get(url, headers={'API-Key': API_KEY}, stream=True)
+                r.raise_for_status()
+                return r
+            except requests.RequestException as exc:
+                last_err = exc
+                if attempt < max_retries:
+                    time.sleep(retry_backoff_sec * attempt)
+        raise last_err
+
     # main loop
     for url in batch:
         snapshot, subhalo, version = parse_url(url)
@@ -103,38 +130,46 @@ def download_and_split_hsc_images(
         fname_parent = f'{snapshot}_{subhalo}_{version}_parent.fits'
         parent_path = os.path.join(parent_dir, fname_parent)
         print(f'\nDownloading {fname_parent} into {parent_dir} …')
-        r = requests.get(url, headers={'API-Key': API_KEY}, stream=True)
-        r.raise_for_status()
-        with open(parent_path, 'wb') as f:
-            for chunk in r.iter_content(8192):
-                f.write(chunk)
+        try:
+            r = download_with_retries(url)
+            with open(parent_path, 'wb') as f:
+                for chunk in r.iter_content(8192):
+                    f.write(chunk)
+        except Exception as exc:
+            print(f' ⚠️  download failed for {fname_parent}: {exc}')
+            record_failure(url, exc)
+            continue
 
         if not parent_file_only:
             # open and split
-            with fits.open(parent_path, memmap=True) as hdul:
-                for filt in ['G', 'R', 'I', 'Z', 'Y']:
-                    target_ext = f'SUBARU_HSC.{filt}'
-                    sci_hdu = next(
-                        (h for h in hdul if h.header.get('EXTNAME','') == target_ext),
-                        None
-                    )
-                    if sci_hdu is None:
-                        print(f' ⚠️  no extension {target_ext} in {fname_parent}')
-                        continue
+            try:
+                with fits.open(parent_path, memmap=True) as hdul:
+                    for filt in ['G', 'R', 'I', 'Z', 'Y']:
+                        target_ext = f'SUBARU_HSC.{filt}'
+                        sci_hdu = next(
+                            (h for h in hdul if h.header.get('EXTNAME','') == target_ext),
+                            None
+                        )
+                        if sci_hdu is None:
+                            print(f' ⚠️  no extension {target_ext} in {fname_parent}')
+                            continue
 
-                    new_hdu = fits.PrimaryHDU(data=sci_hdu.data, header=sci_hdu.header)
-                    out_name = f'{snapshot}_{subhalo}_{filt}_{version}_hsc_realistic.fits'
-                    out_path = os.path.join(split_output_dir, out_name)
-                    new_hdu.writeto(out_path, overwrite=True)
-                    print(f' ✅ wrote {out_name}')
-                    if catalog_entries is not None:
-                        # construct 8-digit object_id: snapshot (2 digits) + subhalo (6-digit zero-padded)
-                        obj_id = int(snapshot) * 1000000 + int(subhalo)
-                        catalog_entries.append({
-                            'object_id': obj_id,
-                            'filename': out_name,
-                            'filter': filt
-                        })
+                        new_hdu = fits.PrimaryHDU(data=sci_hdu.data, header=sci_hdu.header)
+                        out_name = f'{snapshot}_{subhalo}_{filt}_{version}_hsc_realistic.fits'
+                        out_path = os.path.join(split_output_dir, out_name)
+                        new_hdu.writeto(out_path, overwrite=True)
+                        print(f' ✅ wrote {out_name}')
+                        if catalog_entries is not None:
+                            obj_id = int(snapshot) * 1000000 + int(subhalo)
+                            catalog_entries.append({
+                                'object_id': obj_id,
+                                'filename': out_name,
+                                'filter': filt
+                            })
+            except Exception as exc:
+                print(f' ⚠️  split failed for {fname_parent}: {exc}')
+                record_failure(url, exc)
+                continue
 
             # optionally remove parent file
             if remove_parent:
@@ -149,8 +184,24 @@ def download_and_split_hsc_images(
 
     if catalog_entries is not None and not parent_file_only:
         table = Table(rows=catalog_entries, names=['object_id', 'filename', 'filter'])
+        if catalog_append and os.path.exists(catalog_path):
+            existing = Table.read(catalog_path)
+            existing_filenames = set(existing['filename'])
+            if len(table) > 0:
+                mask = [fn not in existing_filenames for fn in table['filename']]
+                table = table[mask]
+            if len(table) > 0:
+                table = vstack([existing, table])
+            else:
+                table = existing
         table.write(catalog_path, overwrite=True)
-        print(f' 📄 wrote catalog with {len(catalog_entries)} entries to {catalog_path}')
+        print(f' 📄 wrote catalog with {len(table)} entries to {catalog_path}')
+
+    if failed_urls is not None:
+        with open(failed_urls_path, 'w') as f:
+            for line in failed_urls:
+                f.write(line + '\n')
+        print(f' 📄 wrote failed URL list to {failed_urls_path}')
 
 
 def main():
@@ -180,8 +231,16 @@ def main():
                               help='Remove parent FITS after splitting')
     split_parser.add_argument('--catalog-path',
                               help='Path to save Hyrax-compatible FITS catalog')
+    split_parser.add_argument('--catalog-append', action='store_true',
+                              help='Append to existing catalog and avoid duplicate filenames')
     split_parser.add_argument('--parent-only', action='store_true',
                               help='Only download parent FITS files')
+    split_parser.add_argument('--failed-urls', default=None,
+                              help='Write failed URLs (with errors) to this file')
+    split_parser.add_argument('--max-retries', type=int, default=3,
+                              help='Number of download attempts per URL')
+    split_parser.add_argument('--retry-backoff-sec', type=float, default=2.0,
+                              help='Base seconds to wait between retries')
 
     args = parser.parse_args()
 
@@ -206,5 +265,9 @@ def main():
             API_KEY=api_key,
             remove_parent=args.remove_parent,
             catalog_path=args.catalog_path,
-            parent_file_only=args.parent_only
+            parent_file_only=args.parent_only,
+            failed_urls_path=args.failed_urls,
+            max_retries=args.max_retries,
+            retry_backoff_sec=args.retry_backoff_sec,
+            catalog_append=args.catalog_append
         )

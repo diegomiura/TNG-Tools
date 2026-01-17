@@ -45,13 +45,19 @@ Additional options:
 - `--batch-start`: Starting index for the batch (default: 0).
 - `--remove-parent`: Remove original downloaded FITS files after splitting.
 - `--catalog-path`: Path to save a Hyrax-compatible FITS catalog.
+- `--catalog-append`: Append to an existing catalog and avoid duplicate filenames.
 - `--parent-only`: Only download parent FITS files without splitting or catalog creation.
+- `--failed-urls`: Write failed URLs (with errors) to this file.
+- `--max-retries`: Number of download attempts per URL (default: 3).
+- `--retry-backoff-sec`: Base seconds to wait between retries (default: 2.0).
 
 Notes:
 
 - Split files are named like `SNAPSHOT_SUBHALO_FILTER_VERSION_hsc_realistic.fits`
   (for example, `72_0_G_v2_hsc_realistic.fits`). If no version is parsed, `v?` is used.
 - Catalog `object_id` is computed as `int(snapshot) * 1000000 + int(subhalo)`.
+- To retry failed downloads later and extend the catalog, re-run with the failed URL list
+  and `--catalog-append`.
 
 ## Environment Variables
 
