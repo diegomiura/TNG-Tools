@@ -12,7 +12,7 @@ def download_and_split_hsc_images(
     BATCH_START=None,
     BATCH_SIZE=None,
     API_KEY=None,
-    remove_parent: bool = False,
+    remove_parent: bool = True,
     catalog_path=None,
     parent_file_only: bool = False,
     parent_output_dir: str = None,
@@ -31,13 +31,15 @@ def download_and_split_hsc_images(
         BATCH_START (int): Starting index for the batch of URLs to download.
         BATCH_SIZE (int): Number of URLs to process in this batch.
         API_KEY (str): API key required to access the TNG50-1 API.
-        remove_parent (bool, optional): If True, delete the original downloaded FITS file after splitting. Defaults to False.
+        remove_parent (bool, optional): If True, delete the original downloaded FITS file after splitting. Defaults to True.
         catalog_path (str, optional): If provided, saves a Hyrax-compatible FITS catalog at this location.
+            When used from the CLI, defaults to split_output_dir/catalog.fits.
             The catalog will include columns: 'object_id' (an integer composed of snapshot and subhalo), 'filename', and 'filter'.
         parent_file_only (bool, optional): If True, only download the parent FITS files and skip splitting and catalog creation. Defaults to False.
         parent_output_dir (str, optional): Directory to save downloaded parent FITS files.
             If None, uses split_output_dir. Defaults to None.
         failed_urls_path (str, optional): If provided, write failed URLs (with error) here.
+            When used from the CLI, defaults to split_output_dir/failed_urls.txt.
         max_retries (int, optional): Number of download attempts per URL. Defaults to 3.
         retry_backoff_sec (float, optional): Base seconds to wait between retries. Defaults to 2.0.
         catalog_append (bool, optional): If True and catalog exists, append new entries without
@@ -90,6 +92,10 @@ def download_and_split_hsc_images(
     # load URLs and pick batch
     with open(URL_LIST) as f:
         urls = [u.strip() for u in f if u.strip()]
+    if BATCH_START is None:
+        BATCH_START = 0
+    if BATCH_SIZE is None:
+        BATCH_SIZE = max(len(urls) - BATCH_START, 0)
     batch = urls[BATCH_START : BATCH_START + BATCH_SIZE]
 
     catalog_entries = [] if catalog_path else None
@@ -198,6 +204,9 @@ def download_and_split_hsc_images(
         print(f' 📄 wrote catalog with {len(table)} entries to {catalog_path}')
 
     if failed_urls is not None:
+        failed_dir = os.path.dirname(failed_urls_path)
+        if failed_dir:
+            os.makedirs(failed_dir, exist_ok=True)
         with open(failed_urls_path, 'w') as f:
             for line in failed_urls:
                 f.write(line + '\n')
@@ -224,19 +233,22 @@ def main():
                               help='Directory for split FITS images')
     split_parser.add_argument('--batch-start', type=int, default=0,
                               help='Starting index for URL batch')
-    split_parser.add_argument('--batch-size',  type=int, required=True,
-                              help='Number of URLs to process')
+    split_parser.add_argument('--batch-size',  type=int, default=None,
+                              help='Number of URLs to process (default: all)')
     split_parser.add_argument('--api-key', help='Your TNG50-1 API key (or set via .env)')
-    split_parser.add_argument('--remove-parent', action='store_true',
-                              help='Remove parent FITS after splitting')
+    parent_group = split_parser.add_mutually_exclusive_group()
+    parent_group.add_argument('--remove-parent', action='store_true', default=True,
+                              help='Remove parent FITS after splitting (default)')
+    parent_group.add_argument('--keep-parent', action='store_false', dest='remove_parent',
+                              help='Keep parent FITS after splitting')
     split_parser.add_argument('--catalog-path',
-                              help='Path to save Hyrax-compatible FITS catalog')
+                              help='Path to save Hyrax-compatible FITS catalog (default: split_output_dir/catalog.fits)')
     split_parser.add_argument('--catalog-append', action='store_true',
                               help='Append to existing catalog and avoid duplicate filenames')
     split_parser.add_argument('--parent-only', action='store_true',
                               help='Only download parent FITS files')
     split_parser.add_argument('--failed-urls', default=None,
-                              help='Write failed URLs (with errors) to this file')
+                              help='Write failed URLs (with errors) to this file (default: split_output_dir/failed_urls.txt)')
     split_parser.add_argument('--max-retries', type=int, default=3,
                               help='Number of download attempts per URL')
     split_parser.add_argument('--retry-backoff-sec', type=float, default=2.0,
@@ -257,6 +269,10 @@ def main():
             os.replace('all_file_urls.txt', args.output)
         print(f' 📄 wrote URL list to {args.output}')
     elif args.command == 'split':
+        if args.catalog_path is None and not args.parent_only:
+            args.catalog_path = os.path.join(args.split_output_dir, 'catalog.fits')
+        if args.failed_urls is None:
+            args.failed_urls = os.path.join(args.split_output_dir, 'failed_urls.txt')
         download_and_split_hsc_images(
             split_output_dir=args.split_output_dir,
             URL_LIST=args.url_list,
