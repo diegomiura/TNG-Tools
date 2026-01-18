@@ -52,7 +52,7 @@ def test_split_functionality(tmp_path, monkeypatch):
 
     # Check split file exists
     files = os.listdir(out_dir)
-    assert any(f.startswith('72_3_') and f.endswith('_hsc_realistic.fits') for f in files)
+    assert any(f.startswith('50_72_3_') and f.endswith('_hsc_realistic.fits') for f in files)
 
     # Check catalog contents
     from astropy.table import Table
@@ -85,7 +85,7 @@ def test_parent_only(tmp_path, monkeypatch):
         parent_file_only=True
     )
 
-    expected_parent = parent_dir / '72_3_v?_parent.fits'
+    expected_parent = parent_dir / '50_72_3_v?_parent.fits'
     assert parent_dir.exists()
     assert expected_parent.exists()
     # No split outputs

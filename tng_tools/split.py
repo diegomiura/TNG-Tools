@@ -46,8 +46,8 @@ def download_and_split_hsc_images(
             duplicating filenames. Defaults to False.
 
     Notes:
-        - Split FITS images will be named as: SNAPSHOT_SUBHALO_FILTER_VERSION_hsc_realistic.fits
-          (e.g., 72_0_G_v2_hsc_realistic.fits). If no version is parsed, 'v?' is used.
+        - Split FITS images will be named as: SIM_SNAPSHOT_SUBHALO_FILTER_VERSION_hsc_realistic.fits
+          (e.g., 50_72_0_G_v2_hsc_realistic.fits). If no version is parsed, 'v?' is used.
         - Catalog format is compatible with Hyrax's FitsImageDataSet expectations.
         - The 'object_id' in the catalog is computed as (int(snapshot) * 1_000_000) + int(subhalo).
 
@@ -101,15 +101,18 @@ def download_and_split_hsc_images(
     catalog_entries = [] if catalog_path else None
     failed_urls = [] if failed_urls_path else None
 
-    # helper to pull snapshot, subhalo, version from URL
+    # helper to pull sim, snapshot, subhalo, version from URL
     def parse_url(u):
         parts = u.split('/')
-        snapshot = parts[6]        # e.g. '72'
+        sim_token = parts[4]      # e.g. 'TNG50-1'
+        sim_match = re.search(r'TNG(\d+)', sim_token)
+        sim = sim_match.group(1) if sim_match else 'TNG?'
+        snapshot = parts[6]       # e.g. '72'
         subhalo = parts[8]        # e.g. '0'
         fn = parts[-1]       # e.g. 'skirt_images_hsc_realistic_v2.fits'
         v_match = re.search(r'(v\d+)', fn)
         version = v_match.group(1) if v_match else 'v?'
-        return snapshot, subhalo, version
+        return sim, snapshot, subhalo, version
 
     def record_failure(url, err):
         if failed_urls is not None:
@@ -130,10 +133,10 @@ def download_and_split_hsc_images(
 
     # main loop
     for url in batch:
-        snapshot, subhalo, version = parse_url(url)
+        sim, snapshot, subhalo, version = parse_url(url)
 
         # download parent file
-        fname_parent = f'{snapshot}_{subhalo}_{version}_parent.fits'
+        fname_parent = f'{sim}_{snapshot}_{subhalo}_{version}_parent.fits'
         parent_path = os.path.join(parent_dir, fname_parent)
         print(f'\nDownloading {fname_parent} into {parent_dir} …')
         try:
@@ -161,7 +164,7 @@ def download_and_split_hsc_images(
                             continue
 
                         new_hdu = fits.PrimaryHDU(data=sci_hdu.data, header=sci_hdu.header)
-                        out_name = f'{snapshot}_{subhalo}_{filt}_{version}_hsc_realistic.fits'
+                        out_name = f'{sim}_{snapshot}_{subhalo}_{filt}_{version}_hsc_realistic.fits'
                         out_path = os.path.join(split_output_dir, out_name)
                         new_hdu.writeto(out_path, overwrite=True)
                         print(f' ✅ wrote {out_name}')

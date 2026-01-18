@@ -55,8 +55,8 @@ Additional options:
 
 Notes:
 
-- Split files are named like `SNAPSHOT_SUBHALO_FILTER_VERSION_hsc_realistic.fits`
-  (for example, `72_0_G_v2_hsc_realistic.fits`). If no version is parsed, `v?` is used.
+- Split files are named like `SIM_SNAPSHOT_SUBHALO_FILTER_VERSION_hsc_realistic.fits`
+  (for example, `50_72_0_G_v2_hsc_realistic.fits`). If no version is parsed, `v?` is used.
 - Catalog `object_id` is computed as `int(snapshot) * 1000000 + int(subhalo)`.
 - To retry failed downloads later and extend the catalog, re-run with the failed URL list
   and `--catalog-append`.
