@@ -8,7 +8,7 @@ def make_list_of_urls(API_KEY=None,
                       ENDING='/api/TNG50-1/files/skirt_images_hsc/',
                       SNAPSHOT_FILTER='_realistic_v2_91'):
     '''
-    Fetches all FITS image URLs from the TNG50-1 API, filters by snapshot tag,
+    Fetches all FITS image URLs from the TNG API, filters by snapshot tag,
     and writes them to a text file.
 
     Args:
@@ -44,12 +44,19 @@ def main():
     parser.add_argument('--api-key', help='TNG50-1 API key (or set via .env)')
     parser.add_argument('--output', default='all_file_urls.txt',
                         help='Where to write the URL list')
+    parser.add_argument('--sim', choices=['tng50', 'tng100'], default='tng50',
+                        help='Simulation to query (default: tng50)')
+    parser.add_argument('--snapshot', type=int, choices=[72, 91], default=91,
+                        help='Snapshot number to filter (default: 91)')
     args = parser.parse_args()
 
     api_key = args.api_key or os.getenv('TNG50_API_KEY')
     if not api_key:
         parser.error('An API key is required: pass --api-key or set TNG50_API_KEY in .env')
-    make_list_of_urls(API_KEY=api_key)
+    sim_api = args.sim.upper() + '-1'
+    ending = f'/api/{sim_api}/files/skirt_images_hsc/'
+    snapshot_filter = f'_realistic_v2_{args.snapshot}'
+    make_list_of_urls(API_KEY=api_key, ENDING=ending, SNAPSHOT_FILTER=snapshot_filter)
     if args.output != 'all_file_urls.txt':
         os.replace('all_file_urls.txt', args.output)
     print(f' 📄 wrote URL list to {args.output}')

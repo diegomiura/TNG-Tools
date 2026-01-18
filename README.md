@@ -15,7 +15,7 @@ Recommended unified CLI:
 ### Fetch HSC FITS URLs
 
 ```bash
-tng-tools gen-urls --api-key YOUR_API_KEY --output urls.txt
+tng-tools gen-urls --sim tng50 --snapshot 91 --api-key YOUR_API_KEY --output urls.txt
 ```
 
 This command fetches all FITS image URLs from the TNG50-1 API filtered by snapshot and writes them to `urls.txt`.
@@ -32,8 +32,8 @@ This command downloads the FITS files listed in `urls.txt` (by default, all rema
 Legacy commands (still supported):
 
 ```bash
-tng-gen-urls --api-key YOUR_API_KEY --output urls.txt
-tng-split gen-urls --api-key YOUR_API_KEY --output urls.txt
+tng-gen-urls --sim tng50 --snapshot 91 --api-key YOUR_API_KEY --output urls.txt
+tng-split gen-urls --sim tng50 --snapshot 91 --api-key YOUR_API_KEY --output urls.txt
 tng-split split --url-list urls.txt --split-output-dir split_images --api-key YOUR_API_KEY
 ```
 

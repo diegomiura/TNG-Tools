@@ -224,6 +224,10 @@ def main():
     gen_parser.add_argument('--api-key', help='TNG50-1 API key (or set via .env)')
     gen_parser.add_argument('--output', default='all_file_urls.txt',
                             help='Where to write the URL list')
+    gen_parser.add_argument('--sim', choices=['tng50', 'tng100'], default='tng50',
+                            help='Simulation to query (default: tng50)')
+    gen_parser.add_argument('--snapshot', type=int, choices=[72, 91], default=91,
+                            help='Snapshot number to filter (default: 91)')
 
     # Split sub-command
     split_parser = sub.add_parser('split', help='Download & split HSC FITS images')
@@ -263,7 +267,10 @@ def main():
 
     if args.command == 'gen-urls':
         from tng_tools.fetch import make_list_of_urls
-        make_list_of_urls(API_KEY=api_key)
+        sim_api = args.sim.upper() + '-1'
+        ending = f'/api/{sim_api}/files/skirt_images_hsc/'
+        snapshot_filter = f'_realistic_v2_{args.snapshot}'
+        make_list_of_urls(API_KEY=api_key, ENDING=ending, SNAPSHOT_FILTER=snapshot_filter)
         # move default output if custom path requested
         if args.output != 'all_file_urls.txt':
             os.replace('all_file_urls.txt', args.output)
