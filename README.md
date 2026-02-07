@@ -29,6 +29,14 @@ tng-tools split --url-list urls.txt --split-output-dir split_images --api-key YO
 
 This command downloads the FITS files listed in `urls.txt` (by default, all remaining), splits them by filter, and saves the split images.
 
+### Rebuild a catalog from existing split FITS files (no re-download)
+
+```bash
+tng-tools catalog --split-output-dir split_images
+```
+
+This command scans already-downloaded split FITS files and writes an enriched catalog (including merger labels) without calling the TNG API or re-downloading data.
+
 Legacy commands (still supported):
 
 ```bash
@@ -52,12 +60,25 @@ Additional options:
 - `--failed-urls`: Write failed URLs (with errors) to this file (default: `split_images/failed_urls.txt`).
 - `--max-retries`: Number of download attempts per URL (default: 3).
 - `--retry-backoff-sec`: Base seconds to wait between retries (default: 2.0).
+- `--merger-history-dir`: Optional directory containing `Mergers_TNG50-1.csv` and/or `Mergers_TNG100-1.csv`.
+  If omitted, tng-tools auto-detects common locations.
+- `catalog` subcommand options:
+  - `--split-output-dir`: Directory containing existing split FITS files.
+  - `--catalog-path`: Output catalog path (default: `split-output-dir/catalog.fits`).
+  - `--catalog-append`: Append to existing catalog and avoid duplicate filenames.
+  - `--recursive`: Search for split FITS files recursively.
+  - `--merger-history-dir`: Optional merger CSV directory override.
 
 Notes:
 
 - Split files are named like `SIM_SNAPSHOT_SUBHALO_FILTER_VERSION_hsc_realistic.fits`
   (for example, `50_72_0_G_v2_hsc_realistic.fits`). If no version is parsed, `v?` is used.
 - Catalog `object_id` is computed as `int(snapshot) * 1000000 + int(subhalo)`.
+- Catalog rows include merger labels by default:
+  `dbid`, `has_merger_row`, `has_*_{past,future}_1gyr`, `*_count_{since,until}_1gyr`,
+  and `*_time_{since,until}_merger` for major/minor/mini channels.
+- Merger lookup uses `dbID = "{snapshot}_{subhalo}"` and sim-specific files
+  (`Mergers_TNG50-1.csv` or `Mergers_TNG100-1.csv`).
 - To retry failed downloads later and extend the catalog, re-run with the failed URL list
   and `--catalog-append`.
 
