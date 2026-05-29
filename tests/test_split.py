@@ -25,16 +25,33 @@ def create_test_fits(tmp_path):
     return parent
 
 
-def create_merger_csv(tmp_path, sim='50'):
-    merger_dir = tmp_path / 'merger_history'
-    merger_dir.mkdir()
+def write_merger_csv(
+    merger_dir,
+    sim='50',
+    major_count_since=2,
+    major_count_until=1,
+    major_time_since=0.42,
+    major_time_until=0.13,
+    major_past_mass_ratio=0.77,
+):
     csv_path = merger_dir / f'Mergers_TNG{sim}-1.csv'
     csv_path.write_text(
-        'dbID,Major_CountSince1Gyr,Major_CountUntil1Gyr,Major_TimeSinceMerger,Major_TimeUntilMerger,'
-        'Minor_CountSince1Gyr,Minor_CountUntil1Gyr,Minor_TimeSinceMerger,Minor_TimeUntilMerger,'
-        'Mini_CountSince1Gyr,Mini_CountUntil1Gyr,Mini_TimeSinceMerger,Mini_TimeUntilMerger\n'
-        '72_3,2,1,0.42,0.13,0,3,-1.0,0.5,1,0,0.2,-1.0\n'
+        'dbID,SnapNum,SubfindID,MaxMassSnap_stars,Major_CountSince1Gyr,'
+        'Major_CountUntil1Gyr,Major_TimeSinceMerger,Major_TimeUntilMerger,'
+        'Major_PastMassRatio,Minor_CountSince1Gyr,Minor_CountUntil1Gyr,'
+        'Minor_TimeSinceMerger,Minor_TimeUntilMerger,Mini_CountSince1Gyr,'
+        'Mini_CountUntil1Gyr,Mini_TimeSinceMerger,Mini_TimeUntilMerger\n'
+        f'72_3,72,3,9,{major_count_since},{major_count_until},'
+        f'{major_time_since},{major_time_until},{major_past_mass_ratio},'
+        '0,3,-1.0,0.5,1,0,0.2,-1.0\n'
     )
+    return csv_path
+
+
+def create_merger_csv(tmp_path, sim='50', **kwargs):
+    merger_dir = tmp_path / 'merger_history'
+    merger_dir.mkdir(exist_ok=True)
+    write_merger_csv(merger_dir, sim=sim, **kwargs)
     return merger_dir
 
 def test_split_functionality(tmp_path, monkeypatch):
@@ -127,6 +144,12 @@ def test_split_adds_merger_labels(tmp_path, monkeypatch):
     assert row['major_count_since_1gyr'] == 2
     assert row['minor_count_until_1gyr'] == 3
     assert row['mini_time_since_merger'] == pytest.approx(0.2)
+    assert 'dbID' not in tbl.colnames
+    assert 'SnapNum' not in tbl.colnames
+    assert 'SubfindID' not in tbl.colnames
+    assert row['MaxMassSnap_stars'] == pytest.approx(9.0)
+    assert row['Major_CountSince1Gyr'] == pytest.approx(2.0)
+    assert row['Major_PastMassRatio'] == pytest.approx(0.77)
 
 def test_parent_only(tmp_path, monkeypatch):
     parent = create_test_fits(tmp_path)
@@ -180,8 +203,56 @@ def test_catalog_command_rebuilds_from_existing_splits(tmp_path):
 
     from astropy.table import Table
     tbl = Table.read(str(catalog))
-    assert set(tbl.colnames) == set(CATALOG_COLUMN_ORDER)
+    assert set(CATALOG_COLUMN_ORDER).issubset(set(tbl.colnames))
     assert len(tbl) == 2
     assert set(tbl['filter']) == {'G', 'R'}
     assert set(tbl['has_merger_row']) == {True}
     assert set(tbl['dbid']) == {'72_3'}
+    assert 'dbID' not in tbl.colnames
+    assert 'SnapNum' not in tbl.colnames
+    assert 'SubfindID' not in tbl.colnames
+    assert all(value == pytest.approx(0.77) for value in tbl['Major_PastMassRatio'])
+
+
+def test_catalog_append_refreshes_existing_merger_fields(tmp_path):
+    split_dir = tmp_path / 'split_images'
+    split_dir.mkdir()
+    (split_dir / '50_72_3_G_v2_hsc_realistic.fits').touch()
+
+    merger_dir = create_merger_csv(
+        tmp_path,
+        sim='50',
+        major_count_since=2,
+        major_past_mass_ratio=0.77,
+    )
+    catalog = tmp_path / 'catalog.fits'
+
+    build_catalog_from_split_images(
+        split_output_dir=str(split_dir),
+        catalog_path=str(catalog),
+        catalog_append=False,
+        merger_history_dir=str(merger_dir),
+        recursive=False,
+    )
+
+    write_merger_csv(
+        merger_dir,
+        sim='50',
+        major_count_since=5,
+        major_past_mass_ratio=0.12,
+    )
+    build_catalog_from_split_images(
+        split_output_dir=str(split_dir),
+        catalog_path=str(catalog),
+        catalog_append=True,
+        merger_history_dir=str(merger_dir),
+        recursive=False,
+    )
+
+    from astropy.table import Table
+    tbl = Table.read(str(catalog))
+    assert len(tbl) == 1
+    row = tbl[0]
+    assert row['major_count_since_1gyr'] == 5
+    assert row['Major_CountSince1Gyr'] == pytest.approx(5.0)
+    assert row['Major_PastMassRatio'] == pytest.approx(0.12)

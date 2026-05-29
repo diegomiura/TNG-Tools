@@ -68,6 +68,8 @@ CATALOG_COLUMN_DTYPES = [
     'f8',
 ]
 
+CATALOG_COLUMN_DTYPES_BY_NAME = dict(zip(CATALOG_COLUMN_ORDER, CATALOG_COLUMN_DTYPES))
+
 DEFAULT_COLUMN_VALUES = {
     'object_id': -1,
     'filename': '',
@@ -96,6 +98,9 @@ DEFAULT_COLUMN_VALUES = {
     'mini_time_since_merger': -1.0,
     'mini_time_until_merger': -1.0,
 }
+
+MERGER_DUPLICATE_COLUMNS = {'dbID', 'SnapNum', 'SubfindID'}
+MERGER_DEFAULT_VALUE = -1.0
 
 MERGER_LABEL_COLUMNS = [
     'has_major_past_1gyr',
@@ -141,8 +146,38 @@ def _default_catalog_entry():
     return dict(DEFAULT_COLUMN_VALUES)
 
 
-def _default_value_for_column(column_name):
-    return DEFAULT_COLUMN_VALUES.get(column_name, '')
+def _default_value_for_column(column_name, merger_columns=None):
+    if column_name in DEFAULT_COLUMN_VALUES:
+        return DEFAULT_COLUMN_VALUES[column_name]
+    if merger_columns is not None and column_name in merger_columns:
+        return MERGER_DEFAULT_VALUE
+    return ''
+
+
+def _catalog_dtype_for_column(column_name, merger_columns=None):
+    if column_name in CATALOG_COLUMN_DTYPES_BY_NAME:
+        return CATALOG_COLUMN_DTYPES_BY_NAME[column_name]
+    if merger_columns is not None and column_name in merger_columns:
+        return 'f8'
+    return 'U256'
+
+
+def _merger_columns_from_fieldnames(fieldnames):
+    if not fieldnames:
+        return []
+    return [col for col in fieldnames if col not in MERGER_DUPLICATE_COLUMNS]
+
+
+def _all_merger_columns(merger_cache):
+    columns = []
+    seen = set()
+    for merger_data in merger_cache.values():
+        for col in merger_data.get('columns', []):
+            if col in seen:
+                continue
+            seen.add(col)
+            columns.append(col)
+    return columns
 
 
 def _merger_labels_from_row(row):
@@ -176,6 +211,13 @@ def _merger_labels_from_row(row):
         'mini_time_until_merger': _safe_float(row.get('Mini_TimeUntilMerger')),
     })
     return labels
+
+
+def _raw_merger_values_from_row(row, merger_columns):
+    return {
+        col: _safe_float(row.get(col), default=MERGER_DEFAULT_VALUE)
+        for col in merger_columns
+    }
 
 
 def _candidate_merger_csv_paths(sim, merger_history_dir=None, split_output_dir=None):
@@ -238,19 +280,22 @@ def _load_merger_rows(sim, merger_history_dir=None, split_output_dir=None):
     )
     if path is None:
         print(f' ⚠️  merger history CSV not found for TNG{sim}; merger labels default to empty')
-        return {}
+        return {'columns': [], 'rows': {}}
 
     merger_rows = {}
     with open(path, newline='') as csvfile:
         reader = csv.DictReader(csvfile)
+        merger_columns = _merger_columns_from_fieldnames(reader.fieldnames)
         for row in reader:
             dbid = row.get('dbID')
             if not dbid:
                 continue
-            merger_rows[dbid] = _merger_labels_from_row(row)
+            merger_row = _raw_merger_values_from_row(row, merger_columns)
+            merger_row.update(_merger_labels_from_row(row))
+            merger_rows[dbid] = merger_row
 
     print(f' 📄 loaded merger history for TNG{sim}: {len(merger_rows)} rows from {path}')
-    return merger_rows
+    return {'columns': merger_columns, 'rows': merger_rows}
 
 
 def _build_catalog_entry(
@@ -292,12 +337,10 @@ def _build_catalog_entry(
             split_output_dir=split_output_dir,
         )
 
-    merger_labels = merger_cache[sim_key].get(dbid)
-    if merger_labels:
+    merger_row = merger_cache[sim_key].get('rows', {}).get(dbid)
+    if merger_row:
         entry['has_merger_row'] = True
-        for key in CATALOG_COLUMN_ORDER:
-            if key in merger_labels:
-                entry[key] = merger_labels[key]
+        entry.update(merger_row)
     return entry
 
 
@@ -313,10 +356,30 @@ def _parse_split_filename(filename):
     }
 
 
-def _fill_missing_columns(table, all_columns):
+def _fill_missing_columns(table, all_columns, merger_columns=None):
+    merger_columns = set(merger_columns or [])
     for col in all_columns:
         if col not in table.colnames:
-            table[col] = [_default_value_for_column(col)] * len(table)
+            table[col] = [_default_value_for_column(col, merger_columns)] * len(table)
+
+
+def _catalog_columns_for_entries(catalog_entries, merger_cache=None):
+    columns = list(CATALOG_COLUMN_ORDER)
+    seen = set(columns)
+    if merger_cache is not None:
+        for col in _all_merger_columns(merger_cache):
+            if col in seen:
+                continue
+            seen.add(col)
+            columns.append(col)
+
+    for entry in catalog_entries:
+        for col in entry:
+            if col in seen:
+                continue
+            seen.add(col)
+            columns.append(col)
+    return columns
 
 
 def _upgrade_existing_catalog(existing, merger_cache, merger_history_dir=None, split_output_dir=None):
@@ -328,9 +391,7 @@ def _upgrade_existing_catalog(existing, merger_cache, merger_history_dir=None, s
     for filename, filt in zip(existing['filename'], filters):
         parsed = _parse_split_filename(filename)
         if parsed is None:
-            entry = _default_catalog_entry()
-            entry['filename'] = str(filename)
-            entry['filter'] = str(filt)
+            entry = None
         else:
             entry = _build_catalog_entry(
                 sim=parsed['sim'],
@@ -344,18 +405,47 @@ def _upgrade_existing_catalog(existing, merger_cache, merger_history_dir=None, s
             )
         parsed_entries.append(entry)
 
-    for col in CATALOG_COLUMN_ORDER:
-        if col not in existing.colnames:
-            existing[col] = [entry[col] for entry in parsed_entries]
+    merger_columns = set(_all_merger_columns(merger_cache))
+    refresh_columns = _catalog_columns_for_entries(
+        [entry for entry in parsed_entries if entry is not None],
+        merger_cache=merger_cache,
+    )
+
+    for col in refresh_columns:
+        values = []
+        for row_index, entry in enumerate(parsed_entries):
+            if entry is None:
+                if col in existing.colnames:
+                    values.append(existing[col][row_index])
+                else:
+                    values.append(_default_value_for_column(col, merger_columns))
+                continue
+            values.append(entry.get(col, _default_value_for_column(col, merger_columns)))
+        existing[col] = values
 
     return existing
 
 
-def _build_catalog_table(catalog_entries):
+def _build_catalog_table(catalog_entries, merger_cache=None):
+    if merger_cache is None:
+        merger_cache = {}
+
+    columns = _catalog_columns_for_entries(catalog_entries, merger_cache=merger_cache)
+    merger_columns = set(_all_merger_columns(merger_cache))
+    for entry in catalog_entries:
+        merger_columns.update(
+            col for col in entry
+            if col not in CATALOG_COLUMN_DTYPES_BY_NAME
+        )
+    dtypes = [_catalog_dtype_for_column(col, merger_columns) for col in columns]
+
     if len(catalog_entries) == 0:
-        return Table(names=CATALOG_COLUMN_ORDER, dtype=CATALOG_COLUMN_DTYPES)
-    rows = [[entry[col] for col in CATALOG_COLUMN_ORDER] for entry in catalog_entries]
-    return Table(rows=rows, names=CATALOG_COLUMN_ORDER)
+        return Table(names=columns, dtype=dtypes)
+    rows = [
+        [entry.get(col, _default_value_for_column(col, merger_columns)) for col in columns]
+        for entry in catalog_entries
+    ]
+    return Table(rows=rows, names=columns, dtype=dtypes)
 
 
 def _write_catalog_table(
@@ -384,8 +474,13 @@ def _write_catalog_table(
             table = table[mask]
 
         all_columns = list(dict.fromkeys(list(existing.colnames) + list(table.colnames)))
-        _fill_missing_columns(existing, all_columns)
-        _fill_missing_columns(table, all_columns)
+        merger_columns = set(_all_merger_columns(merger_cache))
+        merger_columns.update(
+            col for col in table.colnames
+            if col not in CATALOG_COLUMN_DTYPES_BY_NAME
+        )
+        _fill_missing_columns(existing, all_columns, merger_columns=merger_columns)
+        _fill_missing_columns(table, all_columns, merger_columns=merger_columns)
         existing = existing[all_columns]
         table = table[all_columns]
 
@@ -446,7 +541,7 @@ def build_catalog_from_split_images(
             )
         )
 
-    table = _build_catalog_table(catalog_entries)
+    table = _build_catalog_table(catalog_entries, merger_cache=merger_cache)
     _write_catalog_table(
         table=table,
         catalog_path=catalog_path,
@@ -491,7 +586,7 @@ def download_and_split_hsc_images(
         remove_parent (bool, optional): If True, delete the original downloaded FITS file after splitting. Defaults to True.
         catalog_path (str, optional): If provided, saves a Hyrax-compatible FITS catalog at this location.
             When used from the CLI, defaults to split_output_dir/catalog.fits.
-            The catalog includes image identifiers plus merger-history labels by default.
+            The catalog includes image identifiers, merger-history labels, and raw merger-history fields by default.
         parent_file_only (bool, optional): If True, only download the parent FITS files and skip splitting and catalog creation. Defaults to False.
         parent_output_dir (str, optional): Directory to save downloaded parent FITS files.
             If None, uses split_output_dir. Defaults to None.
@@ -500,7 +595,7 @@ def download_and_split_hsc_images(
         max_retries (int, optional): Number of download attempts per URL. Defaults to 3.
         retry_backoff_sec (float, optional): Base seconds to wait between retries. Defaults to 2.0.
         catalog_append (bool, optional): If True and catalog exists, append new entries without
-            duplicating filenames. Defaults to False.
+            duplicating filenames and refresh existing rows from the merger CSV. Defaults to False.
         merger_history_dir (str, optional): Directory or file path for merger CSV files.
             If not provided, the tool auto-detects common locations.
 
@@ -509,7 +604,8 @@ def download_and_split_hsc_images(
           (e.g., 50_72_0_G_v2_hsc_realistic.fits). If no version is parsed, 'v?' is used.
         - Catalog format is compatible with Hyrax's FitsImageDataSet expectations.
         - The 'object_id' in the catalog is computed as (int(snapshot) * 1_000_000) + int(subhalo).
-        - Merger labels are looked up from Mergers_TNG50-1.csv / Mergers_TNG100-1.csv by dbID=snapshot_subhalo.
+        - Merger labels and raw merger fields are looked up from Mergers_TNG50-1.csv / Mergers_TNG100-1.csv by dbID=snapshot_subhalo.
+        - Raw merger fields keep their source names, except dbID/SnapNum/SubfindID are omitted because the image catalog already stores that identity.
 
     Example:
         # Save split images and keep the original FITS files
@@ -659,7 +755,7 @@ def download_and_split_hsc_images(
             time.sleep(1)
 
     if catalog_entries is not None and not parent_file_only:
-        table = _build_catalog_table(catalog_entries)
+        table = _build_catalog_table(catalog_entries, merger_cache=merger_cache)
         _write_catalog_table(
             table=table,
             catalog_path=catalog_path,
@@ -714,7 +810,7 @@ def main():
     split_parser.add_argument('--catalog-path',
                               help='Path to save Hyrax-compatible FITS catalog (default: split_output_dir/catalog.fits)')
     split_parser.add_argument('--catalog-append', action='store_true',
-                              help='Append to existing catalog and avoid duplicate filenames')
+                              help='Append to existing catalog, refresh existing rows, and avoid duplicate filenames')
     split_parser.add_argument('--parent-only', action='store_true',
                               help='Only download parent FITS files')
     split_parser.add_argument('--failed-urls', default=None,
@@ -733,7 +829,7 @@ def main():
     catalog_parser.add_argument('--catalog-path',
                                 help='Path to save catalog (default: split_output_dir/catalog.fits)')
     catalog_parser.add_argument('--catalog-append', action='store_true',
-                                help='Append to existing catalog and avoid duplicate filenames')
+                                help='Append to existing catalog, refresh existing rows, and avoid duplicate filenames')
     catalog_parser.add_argument('--merger-history-dir', default=None,
                                 help='Directory containing merger CSVs (default: auto-detect)')
     catalog_parser.add_argument('--recursive', action='store_true',

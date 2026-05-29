@@ -35,7 +35,7 @@ This command downloads the FITS files listed in `urls.txt` (by default, all rema
 tng-tools catalog --split-output-dir split_images
 ```
 
-This command scans already-downloaded split FITS files and writes an enriched catalog (including merger labels) without calling the TNG API or re-downloading data.
+This command scans already-downloaded split FITS files and writes an enriched catalog (including merger labels and raw merger-history columns) without calling the TNG API or re-downloading data.
 
 Legacy commands (still supported):
 
@@ -77,10 +77,14 @@ Notes:
 - Catalog rows include merger labels by default:
   `dbid`, `has_merger_row`, `has_*_{past,future}_1gyr`, `*_count_{since,until}_1gyr`,
   and `*_time_{since,until}_merger` for major/minor/mini channels.
+- Catalog rows also include the raw merger CSV columns with their original names, except
+  duplicate identity fields already represented in the image catalog:
+  `dbID`, `SnapNum`, and `SubfindID`.
+- Missing raw merger values are written as `-1.0`.
 - Merger lookup uses `dbID = "{snapshot}_{subhalo}"` and sim-specific files
   (`Mergers_TNG50-1.csv` or `Mergers_TNG100-1.csv`).
 - To retry failed downloads later and extend the catalog, re-run with the failed URL list
-  and `--catalog-append`.
+  and `--catalog-append`. Existing rows are refreshed from the current merger CSV during append.
 
 ## Environment Variables
 
